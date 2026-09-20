@@ -20,8 +20,8 @@ def make_sine_dataset(n_samples, n_points=8):
     return X.astype(np.float64)  # shape: (n_samples, n_points)
 
 
-N_TRAIN = 900
-N_VAL = 100
+N_TRAIN = 90000
+N_VAL = 10000
 X_train = make_sine_dataset(N_TRAIN)
 X_val = make_sine_dataset(N_VAL)
 
@@ -36,7 +36,7 @@ def he_init(fan_in, fan_out):
 
 
 W_enc = he_init(INPUT_DIM, LATENT_DIM)   # (8, 4)
-b_enc = np.zeros(LATENT_DIM)             # (4,)
+b_enc = np.zeros(LATENT_DIM)             # (4,), [0, 0, 0, 0]で初期化
 W_dec = he_init(LATENT_DIM, OUTPUT_DIM)  # (4, 8)
 b_dec = np.zeros(OUTPUT_DIM)             # (8,)
 
@@ -49,7 +49,7 @@ def relu(x):
 
 
 def relu_grad(x):
-    return np.where(x > 0, 1.0, LEAKY_ALPHA).astype(x.dtype)
+    return np.where(x > 0, 1.0, LEAKY_ALPHA).astype(x.dtype) ## 微分の代わりに、活性化関数の勾配を返す
 
 
 def forward(X):
@@ -58,7 +58,7 @@ def forward(X):
     z = relu(z_pre)                # (N, 4)  潜在変数
     x_pre = z @ W_dec + b_dec      # (N, 8)  Decoderの活性化前
     x_hat = relu(x_pre)            # (N, 8)  復元結果
-    cache = (X, z_pre, z, x_pre, x_hat)
+    cache = (X, z_pre, z, x_pre, x_hat)  # cacheは逆伝播で使う中間値をまとめたもの
     return x_hat, cache
 
 
@@ -69,7 +69,7 @@ def mse_loss(x_hat, X):
 def backward(cache, X):
     """誤差逆伝播。各パラメータの勾配を返す。"""
     N = X.shape[0]
-    _, z_pre, z, x_pre, x_hat = cache
+    _, z_pre, z, x_pre, x_hat = cache ## _, はcacheの中のXを使わないので_で受け取る
 
     # dL/dx_hat  (MSE: L = mean((x_hat - X)^2))
     d_xhat = 2.0 * (x_hat - X) / (N * OUTPUT_DIM)
@@ -91,8 +91,8 @@ def backward(cache, X):
 # ---------------------------------------------------------
 # 3. 学習ループ(単純な勾配降下法)
 # ---------------------------------------------------------
-LR = 0.1
-EPOCHS = 3000
+LR = 0.001
+EPOCHS = 300000
 
 for epoch in range(1, EPOCHS + 1):
     x_hat, cache = forward(X_train)
