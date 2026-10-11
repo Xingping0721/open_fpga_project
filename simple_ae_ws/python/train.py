@@ -8,7 +8,23 @@
 - z : latent variable (4-dim)
 """
 
+import argparse
+import os
+
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")  # 画面なしでもPNGを保存できるようにする
+import matplotlib.pyplot as plt
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--epochs", type=int, default=300000)
+parser.add_argument("--out", default=os.path.join(SCRIPT_DIR, "weights", "ae_weights.npz"),
+                    help="重みの保存先 (.npz)")
+parser.add_argument("--results-dir", default=os.path.join(SCRIPT_DIR, "results"),
+                    help="損失曲線・再構成プロットの保存先")
+args = parser.parse_args()
 
 np.random.seed(0)
 
@@ -92,7 +108,10 @@ def backward(cache, X):
 # 3. 学習ループ(単純な勾配降下法)
 # ---------------------------------------------------------
 LR = 0.001
-EPOCHS = 300000
+EPOCHS = args.epochs
+LOG_EVERY = 300
+
+history = []  # (epoch, train_mse, val_mse) 損失曲線のプロット用
 
 for epoch in range(1, EPOCHS + 1):
     x_hat, cache = forward(X_train)
@@ -104,9 +123,10 @@ for epoch in range(1, EPOCHS + 1):
     W_dec -= LR * dW_dec
     b_dec -= LR * db_dec
 
-    if epoch % 300 == 0 or epoch == 1:
+    if epoch % LOG_EVERY == 0 or epoch == 1:    ## test lossを計算してログに出す
         val_hat, _ = forward(X_val)
         val_loss = mse_loss(val_hat, X_val)
+        history.append((epoch, loss, val_loss))
         print(f"epoch {epoch:5d}  train_mse={loss:.6f}  val_mse={val_loss:.6f}")
 
 # ---------------------------------------------------------
@@ -122,12 +142,46 @@ print("train と val の誤差が近ければ過学習していないと判断�
 # ---------------------------------------------------------
 # 5. 重みの保存 (Verilog用のexportスクリプトから読めるように .npz で保存)
 # ---------------------------------------------------------
+os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
 np.savez(
-    "weights/ae_weights.npz",
+    args.out,
     W_enc=W_enc, b_enc=b_enc,
     W_dec=W_dec, b_dec=b_dec,
 )
-print("\n重みを weights/ae_weights.npz に保存しました")
+print(f"\n重みを {args.out} に保存しました")
+
+# ---------------------------------------------------------
+# 6. 損失曲線と再構成結果のプロット保存
+# ---------------------------------------------------------
+os.makedirs(args.results_dir, exist_ok=True)
+hist = np.array(history)
+np.savetxt(os.path.join(args.results_dir, "loss_history.csv"), hist,
+           delimiter=",", header="epoch,train_mse,val_mse", comments="")
+
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.plot(hist[:, 0], hist[:, 1], label="train")
+ax.plot(hist[:, 0], hist[:, 2], label="val", linestyle="--")
+ax.set_yscale("log")
+ax.set_xlabel("epoch")
+ax.set_ylabel("MSE")
+ax.set_title("8-4-8 AE training loss")
+ax.legend()
+fig.tight_layout()
+fig.savefig(os.path.join(args.results_dir, "loss_curve.png"), dpi=120)
+plt.close(fig)
+
+# 検証データの先頭4サンプルについて入力と復元結果を重ねて描く
+fig, axes = plt.subplots(2, 2, figsize=(8, 6), sharex=True, sharey=True)
+for ax, i in zip(axes.flat, range(4)):
+    ax.plot(X_val[i], "o-", label="input")
+    ax.plot(val_hat[i], "s--", label="reconstruction")
+    ax.set_title(f"X_val[{i}]  mse={np.mean((val_hat[i] - X_val[i]) ** 2):.2e}")
+    ax.set_xlabel("sample index")
+axes[0, 0].legend()
+fig.tight_layout()
+fig.savefig(os.path.join(args.results_dir, "reconstruction.png"), dpi=120)
+plt.close(fig)
+print(f"損失曲線・再構成プロットを {args.results_dir} に保存しました")
 
 # サンプル1個の推論結果をコンソールに出しておく(後でVerilogの結果と照合する用)
 sample = X_val[0]
